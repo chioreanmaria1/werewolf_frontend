@@ -4,13 +4,19 @@ import requests
 import json
 
 def run_streamed_game():
-    url = "http://127.0.0.1:8000/start-game"
+    url = "http://127.0.0.1:8000/game/start"
     # We use 'stream=True' to keep the connection open for the whole game
-    with requests.get(url, stream=True) as r:
+    with requests.post(url, stream=True) as r:
         for line in r.iter_lines():
             if line:
-                # Convert raw text from the server back into a Python dictionary
-                yield json.loads(line.decode('utf-8'))
+                decoded = line.decode('utf-8')
+                if decoded.startswith("data: "):
+                    decoded = decoded[6:]
+                
+                try:
+                    yield json.loads(decoded)
+                except json.JSONDecodeError:
+                    continue
 
 # Initialize player data with pending roles and alive status
 players_data = [
@@ -43,8 +49,6 @@ def start_ui(chat_history):
         if "type" in step and step["type"] == "init": 
             actual_roles = step.get("actual_roles", {})
             for p in players_data:
-                # CHANGE: JSON keys are always strings (e.g., "0"). 
-                # Our p["id"] is an integer (0). We must cast to string to match them.
                 p_id_str = str(p["id"])
                 if p_id_str in actual_roles:
                     p["role"] = actual_roles[p_id_str]
@@ -54,12 +58,17 @@ def start_ui(chat_history):
 
         # --- Handle Game End ---
         if "type" in step and step["type"] == "final":
-            # CHANGE: Updated string formatting to clearly show the winners from the server data.
             chat_history.append({"role": "assistant", "content": f"**GAME OVER** - Winners: {step['winners']}"})
             yield [get_player_display(p) for p in players_data] + [chat_history, "🌑 Game Over", f"Rewards: {step['rewards']}"]
             break
 
         # --- Handle Regular Steps ---
+        if "player_id" not in step:
+            # Captures backend errors (e.g. 500 Internal Server Error)
+            chat_history.append({"role": "assistant", "content": f"**System Error**: Unexpected payload received: {step}"})
+            yield [get_player_display(p) for p in players_data] + [chat_history, "<h1 style='text-align: center;'>🌑 Error</h1>", str(step)]
+            continue
+
         player_id = step["player_id"]
         observation = step["observation"]
         alive_ids = step.get("alive_ids", [])
@@ -75,9 +84,6 @@ def start_ui(chat_history):
         player_name = players_data[player_id]["name"]
         chat_history.append({"role": "assistant", "content": f"**{player_name}**: {action}"})
 
-        # CHANGE: We yield every piece of information to Gradio. 
-        # Because run_streamed_game() is slow (0.5s per line), 
-        # the UI updates one step at a time, creating the "live" effect.
         yield [get_player_display(p) for p in players_data] + [
             chat_history, f"<h1 style='text-align: center;'>🌑 {phase}</h1>", observation
         ]
