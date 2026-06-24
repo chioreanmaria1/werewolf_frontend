@@ -14,3 +14,7 @@ This repository contains the user interface (UI) developed with Gradio for real-
 
    ```bash
    pip install gradio requests httpx
+
+# Interface
+
+   <img width="1160" height="563" alt="image" src="https://github.com/user-attachments/assets/e9fdaa4e-4386-48f0-b14f-7ebc6b9a8837" />
